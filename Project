@@ -1,0 +1,76 @@
+import yfinance as yf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
+
+# Step 1: Download historical stock data
+def get_stock_data(ticker, start='2015-01-01', end='2023-12-31'):
+    df = yf.download(ticker, start=start, end=end)
+    return df[['Close']]
+
+# Step 2: Prepare the data
+def prepare_data(data, window_size=60):
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data = scaler.fit_transform(data)
+
+    x, y = [], []
+    for i in range(window_size, len(scaled_data)):
+        x.append(scaled_data[i-window_size:i, 0])
+        y.append(scaled_data[i, 0])
+    
+    x, y = np.array(x), np.array(y)
+    x = np.reshape(x, (x.shape[0], x.shape[1], 1))
+    
+    return x, y, scaler
+
+# Step 3: Build the LSTM model
+def build_model(input_shape):
+    model = Sequential()
+    model.add(LSTM(units=50, return_sequences=True, input_shape=input_shape))
+    model.add(Dropout(0.2))
+    model.add(LSTM(units=50, return_sequences=False))
+    model.add(Dropout(0.2))
+    model.add(Dense(units=1))  # prediction of next closing price
+
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    return model
+
+# Step 4: Plot predictions
+def plot_predictions(real, predicted):
+    plt.figure(figsize=(12, 6))
+    plt.plot(real, color='blue', label='Actual Price')
+    plt.plot(predicted, color='red', label='Predicted Price')
+    plt.title('Stock Price Prediction')
+    plt.xlabel('Time')
+    plt.ylabel('Stock Price')
+    plt.legend()
+    plt.show()
+
+# Step 5: Main workflow
+def main():
+    # Load and prepare data
+    df = get_stock_data('AAPL')
+    train_size = int(len(df) * 0.8)
+    train_data = df[:train_size]
+    test_data = df[train_size - 60:]  # overlap for sequences
+
+    x_train, y_train, scaler = prepare_data(train_data.values)
+    x_test, y_test, _ = prepare_data(test_data.values)
+
+    # Build and train model
+    model = build_model((x_train.shape[1], 1))
+    model.fit(x_train, y_train, epochs=20, batch_size=32)
+
+    # Predict and inverse scale
+    predictions = model.predict(x_test)
+    predictions = scaler.inverse_transform(predictions)
+    actual = scaler.inverse_transform(y_test.reshape(-1, 1))
+
+    # Plot results
+    plot_predictions(actual, predictions)
+
+if __name__ == '__main__
+main()
